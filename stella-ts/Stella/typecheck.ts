@@ -35,7 +35,8 @@ export class Typechecker {
     const paramsList = funDecl.listparamdecl
     const returnType = funDecl.returntype
     if (returnType.type === 'NoReturnType') {
-      throw new Error(`function ${identifier} should have a return type`)
+      const error = `function ${identifier} should have a return type`
+      throw new Error(error)
     }
 
     const functionStellaType: TypeFun = {
@@ -53,6 +54,8 @@ export class Typechecker {
       const error = `Expected expression [${printExpr(returnExpr)}] to be of type ${printType(returnType.type_)}`
       throw new Error(error)
     }
+
+    this.scope.exitScope()
   }
 
   typecheckExpression(expr: expr, expectedType: StellaType): boolean {
@@ -100,15 +103,79 @@ export class Typechecker {
       case 'Var':
         return this.scope.getVariableType(expr.stellaident.value)
       case 'Application':
-        return this.getExpressionType(expr.expr)
+        const applicationType = this.getExpressionType(expr.expr)
+        if (applicationType.type !== 'TypeFun') {
+          const error = `Expected ${printExpr(expr.expr)} to be of type Fun. Actual type is ${printType(
+            applicationType
+          )}`
+          throw new Error(error)
+        }
+        if (applicationType.listtype.length !== expr.listexpr.length) {
+          const error = `[${expr.listexpr.map(printExpr).join(',')}] is not assignable to [${applicationType.listtype
+            .map(printType)
+            .join(',')}]`
+          throw new Error(error)
+        }
+
+        expr.listexpr.forEach((expr, index) => {
+          if (!this.typecheckExpression(expr, applicationType.listtype[index])) {
+            const error = `${printExpr(expr)} is not assignable to type ${printType(applicationType.listtype[index])}`
+            throw new Error(error)
+          }
+        })
+        return applicationType.type_
       case 'Abstraction':
-        return {
+        this.scope.enterScope()
+        expr.listparamdecl.forEach((param) => {
+          this.scope.addVariable(param.stellaident.value, param.type_)
+        })
+
+        const abstractionStellaType: TypeFun = {
           type: 'TypeFun',
           listtype: expr.listparamdecl.map((param) => param.type_),
           type_: this.getExpressionType(expr.expr)
         }
+
+        this.scope.exitScope()
+        return abstractionStellaType
+      case 'NatRec':
+        const initialValueStellaType = this.getExpressionType(expr.expr_2)
+        if (!this.typecheckExpression(expr.expr_1, {type: 'TypeNat'})) {
+          const error = `${printExpr(expr.expr_1)} should be of type Nat`
+          throw new Error(error)
+        }
+
+        const expectedFuncStellaType: TypeFun = {
+          type: 'TypeFun',
+          listtype: [{type: 'TypeNat'}],
+          type_: {
+            type: 'TypeFun',
+            listtype: [initialValueStellaType],
+            type_: initialValueStellaType
+          }
+        }
+        if (!this.typecheckExpression(expr.expr_3, expectedFuncStellaType)) {
+          const error = `Expression ${printExpr(expr.expr_3)} does not match the type ${printType(
+            expectedFuncStellaType
+          )}`
+          throw new Error(error)
+        }
+        return {type: 'TypeNat'}
+      case 'If':
+        if (!this.typecheckExpression(expr.expr_1, {type: 'TypeBool'})) {
+          const error = `Expression ${printExpr(expr.expr_1)} does not match the type Bool`
+          throw new Error(error)
+        }
+        const thenExprType = this.getExpressionType(expr.expr_2)
+        const elseExprType = this.getExpressionType(expr.expr_3)
+        if (!this.checkSameTypes(thenExprType, elseExprType)) {
+          const error = `Then and Else expressions in ${printExpr(expr)} have different types: ${printType(thenExprType)} and ${printType(elseExprType)}`
+          throw new Error(error)
+        }
+        return thenExprType
       default:
-        throw new Error(`Expression [${printExpr(expr)}] is not supported for type checking`)
+        const error = `Expression [${printExpr(expr)}] is not supported for type checking`
+        throw new Error(error)
     }
   }
 
@@ -141,7 +208,9 @@ export class Typechecker {
     }
 
     if (!this.typecheckExpression(natRecNode.expr_3, expectedFuncStellaType)) {
-      const error = `${printExpr(natRecNode.expr_3)} is expected to be of type ${printType(expectedFuncStellaType)}`
+      const error = `${printExpr(natRecNode.expr_3)} is expected to be of type ${printType(
+        expectedFuncStellaType
+      )}. Actual type is ${printType(this.getExpressionType(natRecNode.expr_3))}`
       throw new Error(error)
     }
 
@@ -168,6 +237,11 @@ export class Typechecker {
   }
 
   typecheckAbstraction(abstractionNode: Abstraction, expectedType: StellaType): boolean {
+    this.scope.enterScope()
+    abstractionNode.listparamdecl.forEach((param) => {
+      this.scope.addVariable(param.stellaident.value, param.type_)
+    })
+
     const returnType = this.getExpressionType(abstractionNode.expr)
     const paramsStellaTypes = abstractionNode.listparamdecl.map((param) => param.type_)
     const abstractionStellaType: TypeFun = {
@@ -176,6 +250,7 @@ export class Typechecker {
       type_: returnType
     }
 
+    this.scope.exitScope()
     return this.checkSameTypes(abstractionStellaType, expectedType)
   }
 

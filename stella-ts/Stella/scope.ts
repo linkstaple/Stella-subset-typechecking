@@ -23,7 +23,8 @@ export class Scope {
       }
     }
 
-    throw new Error(`identifier ${identifier} is not defined`)
+    const error = `identifier ${identifier} is not defined`
+    throw new Error(error)
   }
 
   enterScope() {
