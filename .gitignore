@@ -1,3 +1,8 @@
 node_modules
 .antlr
-tests
+stella-ts/Stella/tests/lists/
+stella-ts/Stella/tests/pairs/
+stella-ts/Stella/tests/records/
+stella-ts/Stella/tests/references/
+stella-ts/Stella/tests/sum-types/
+stella-ts/Stella/tests/tuples/
