@@ -182,7 +182,9 @@ export class Typechecker {
     const elseExprType = this.stackExprError(() => this.typecheckExpression(ifNode.expr_3, expectedType), ifNode)
 
     if (!this.checkSameTypes(thenExprType, elseExprType)) {
-      const error = `${printExpr(ifNode.expr_2)} and ${printExpr(ifNode.expr_3)} have different types: ${printType(thenExprType)} and ${printType(elseExprType)}\nat ${printExpr(ifNode)}`
+      const error = `${printExpr(ifNode.expr_2)} and ${printExpr(ifNode.expr_3)} have different types: ${printType(
+        thenExprType
+      )} and ${printType(elseExprType)}\nat ${printExpr(ifNode)}`
       throw new Error(error)
     }
 
@@ -241,12 +243,15 @@ export class Typechecker {
 
   typecheckLet(letNode: Let, expectedType?: StellaType): StellaType {
     this.scope.enterScope()
-    letNode.listpatternbinding.forEach(binding => {
+    letNode.listpatternbinding.forEach((binding) => {
       const exprType = this.typecheckExpression(binding.expr)
       this.typecheckPattern(binding.pattern, exprType)
     })
 
-    const letBindingStellaType = this.stackExprError(() => this.typecheckExpression(letNode.expr, expectedType), letNode)
+    const letBindingStellaType = this.stackExprError(
+      () => this.typecheckExpression(letNode.expr, expectedType),
+      letNode
+    )
     this.scope.exitScope()
     return letBindingStellaType
   }
@@ -264,7 +269,9 @@ export class Typechecker {
     }
 
     if (expectedType && !this.checkSameTypes(refType, expectedType)) {
-      const error = `${printExpr(refNode)} does not match to type ${printType(expectedType)}. Actual type is ${printType(refType)}`
+      const error = `${printExpr(refNode)} does not match to type ${printType(
+        expectedType
+      )}. Actual type is ${printType(refType)}`
       throw new Error(error)
     }
 
@@ -274,12 +281,16 @@ export class Typechecker {
   typecheckDeref(derefNode: Deref, expectedType?: StellaType): StellaType {
     const exprType = this.stackExprError(() => this.typecheckExpression(derefNode.expr), derefNode)
     if (exprType.type !== 'TypeRef') {
-      const error = `${printExpr(derefNode.expr)} is not of type Ref. Actual type is ${printType(exprType)}\nat ${printExpr(derefNode)}`
+      const error = `${printExpr(derefNode.expr)} is not of type Ref. Actual type is ${printType(
+        exprType
+      )}\nat ${printExpr(derefNode)}`
       throw new Error(error)
     }
 
     if (expectedType && !this.checkSameTypes(exprType.type_, expectedType)) {
-      const error = `${printExpr(derefNode.expr)} does not match to type ${printType(expectedType)}. Actual type is ${printType(exprType.type_)}\nat ${printExpr(derefNode)}`
+      const error = `${printExpr(derefNode.expr)} does not match to type ${printType(
+        expectedType
+      )}. Actual type is ${printType(exprType.type_)}\nat ${printExpr(derefNode)}`
       throw new Error(error)
     }
 
@@ -291,13 +302,20 @@ export class Typechecker {
     const leftHandSideStellaType = this.typecheckExpression(assignNode.expr_1)
 
     if (leftHandSideStellaType.type === 'TypeRef' && !['TypeNat', 'TypeRef'].includes(rightHandSideStellaType.type)) {
-      const error = `Type ${printType(rightHandSideStellaType)} is not assignable to ${printType(leftHandSideStellaType)} at ${printExpr(assignNode)}`
+      const error = `Type ${printType(rightHandSideStellaType)} is not assignable to ${printType(
+        leftHandSideStellaType
+      )} at ${printExpr(assignNode)}`
       throw new Error(error)
-    } else if (rightHandSideStellaType.type === 'TypeRef' && !this.checkSameTypes(rightHandSideStellaType, leftHandSideStellaType)) {
-      const error = `Type ${printType(rightHandSideStellaType)} is not assignable to ${printType(leftHandSideStellaType)} at ${printExpr(assignNode)}`
+    } else if (
+      rightHandSideStellaType.type === 'TypeRef' &&
+      !this.checkSameTypes(rightHandSideStellaType, leftHandSideStellaType)
+    ) {
+      const error = `Type ${printType(rightHandSideStellaType)} is not assignable to ${printType(
+        leftHandSideStellaType
+      )} at ${printExpr(assignNode)}`
       throw new Error(error)
     }
-    
+
     if (expectedType && expectedType.type !== 'TypeUnit') {
       const error = `${printExpr(assignNode)} is not compatible to Unit type`
       throw new Error(error)
@@ -328,7 +346,7 @@ export class Typechecker {
   }
 
   typecheckPattern(pattern: pattern, expectedType?: StellaType): StellaType {
-    switch(pattern.type) {
+    switch (pattern.type) {
       case 'PatternFalse':
       case 'PatternTrue':
         if (expectedType && expectedType.type !== 'TypeBool') {
@@ -354,7 +372,7 @@ export class Typechecker {
     if (expectedType && expectedType.type !== 'TypeNat') {
       this.throwPatternTypeIncompatibilityError(succPattern, expectedType)
     }
-    return {type:'TypeNat'}
+    return {type: 'TypeNat'}
   }
 
   checkSameTypes(actualType: StellaType, expectedType: StellaType): boolean {
@@ -366,7 +384,7 @@ export class Typechecker {
       case 'TypeFun':
         return this.checkSameFunTypes(actualType, expectedType)
       case 'TypeRef':
-        return (expectedType.type === 'TypeRef' && this.checkSameTypes(actualType.type_, expectedType.type_))
+        return expectedType.type === 'TypeRef' && this.checkSameTypes(actualType.type_, expectedType.type_)
       default:
         return false
     }
