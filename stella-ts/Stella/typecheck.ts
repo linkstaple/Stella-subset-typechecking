@@ -9,9 +9,19 @@ import {
   IsZero,
   NatRec,
   Abstraction,
-  Application
+  Application,
+  Let,
+  Sequence,
+  Ref,
+  Deref,
+  TypeRef,
+  Assign,
+  pattern,
+  PatternSucc,
+  Add,
+  Multiply
 } from '@abstract'
-import {printExpr, printType} from '@printer'
+import {printExpr, printPattern, printType} from '@printer'
 import {Scope} from './scope'
 
 export class Typechecker {
@@ -90,6 +100,20 @@ export class Typechecker {
         return this.typecheckAbstraction(expr, expectedType)
       case 'Application':
         return this.typecheckApplication(expr, expectedType)
+      case 'Let':
+        return this.typecheckLet(expr, expectedType)
+      case 'Sequence':
+        return this.typecheckSequence(expr, expectedType)
+      case 'Ref':
+        return this.typecheckRef(expr, expectedType)
+      case 'Deref':
+        return this.typecheckDeref(expr, expectedType)
+      case 'Assign':
+        return this.typecheckAssign(expr, expectedType)
+      case 'Add':
+        return this.typecheckAdd(expr, expectedType)
+      case 'Multiply':
+        return this.typecheckMultiply(expr, expectedType)
       default:
         const message = `type checking is not supported for expression ${printExpr(expr)}`
         throw new Error(message)
@@ -142,14 +166,7 @@ export class Typechecker {
   }
 
   typecheckSucc(succNode: Succ, expectedType?: StellaType): StellaType {
-    try {
-      this.typecheckExpression(succNode.expr, {type: 'TypeNat'})
-    } catch (e) {
-      const initialMessage = (e as Error).message
-      const error = `Error at ${printExpr(succNode)}`
-      const fullError = `${initialMessage}\n${error}`
-      throw new Error(fullError)
-    }
+    this.stackExprError(() => this.typecheckExpression(succNode.expr, {type: 'TypeNat'}), succNode)
 
     if (expectedType && !this.checkSameTypes({type: 'TypeNat'}, expectedType)) {
       this.throwTypeIncompatibilityError(succNode, expectedType)
@@ -222,6 +239,124 @@ export class Typechecker {
     return functionType.type_
   }
 
+  typecheckLet(letNode: Let, expectedType?: StellaType): StellaType {
+    this.scope.enterScope()
+    letNode.listpatternbinding.forEach(binding => {
+      const exprType = this.typecheckExpression(binding.expr)
+      this.typecheckPattern(binding.pattern, exprType)
+    })
+
+    const letBindingStellaType = this.stackExprError(() => this.typecheckExpression(letNode.expr, expectedType), letNode)
+    this.scope.exitScope()
+    return letBindingStellaType
+  }
+
+  typecheckSequence(sequenceNode: Sequence, expectedType?: StellaType): StellaType {
+    this.stackExprError(() => this.typecheckExpression(sequenceNode.expr_1), sequenceNode)
+    return this.stackExprError(() => this.typecheckExpression(sequenceNode.expr_2, expectedType), sequenceNode)
+  }
+
+  typecheckRef(refNode: Ref, expectedType?: StellaType): StellaType {
+    const exprStellaType = this.stackExprError(() => this.typecheckExpression(refNode.expr), refNode)
+    const refType: TypeRef = {
+      type: 'TypeRef',
+      type_: exprStellaType
+    }
+
+    if (expectedType && !this.checkSameTypes(refType, expectedType)) {
+      const error = `${printExpr(refNode)} does not match to type ${printType(expectedType)}. Actual type is ${printType(refType)}`
+      throw new Error(error)
+    }
+
+    return refType
+  }
+
+  typecheckDeref(derefNode: Deref, expectedType?: StellaType): StellaType {
+    const exprType = this.stackExprError(() => this.typecheckExpression(derefNode.expr), derefNode)
+    if (exprType.type !== 'TypeRef') {
+      const error = `${printExpr(derefNode.expr)} is not of type Ref. Actual type is ${printType(exprType)}\nat ${printExpr(derefNode)}`
+      throw new Error(error)
+    }
+
+    if (expectedType && !this.checkSameTypes(exprType.type_, expectedType)) {
+      const error = `${printExpr(derefNode.expr)} does not match to type ${printType(expectedType)}. Actual type is ${printType(exprType.type_)}\nat ${printExpr(derefNode)}`
+      throw new Error(error)
+    }
+
+    return exprType.type_
+  }
+
+  typecheckAssign(assignNode: Assign, expectedType?: StellaType): StellaType {
+    const rightHandSideStellaType = this.stackExprError(() => this.typecheckExpression(assignNode.expr_2), assignNode)
+    const leftHandSideStellaType = this.typecheckExpression(assignNode.expr_1)
+
+    if (leftHandSideStellaType.type === 'TypeRef' && !['TypeNat', 'TypeRef'].includes(rightHandSideStellaType.type)) {
+      const error = `Type ${printType(rightHandSideStellaType)} is not assignable to ${printType(leftHandSideStellaType)} at ${printExpr(assignNode)}`
+      throw new Error(error)
+    } else if (rightHandSideStellaType.type === 'TypeRef' && !this.checkSameTypes(rightHandSideStellaType, leftHandSideStellaType)) {
+      const error = `Type ${printType(rightHandSideStellaType)} is not assignable to ${printType(leftHandSideStellaType)} at ${printExpr(assignNode)}`
+      throw new Error(error)
+    }
+    
+    if (expectedType && expectedType.type !== 'TypeUnit') {
+      const error = `${printExpr(assignNode)} is not compatible to Unit type`
+      throw new Error(error)
+    }
+
+    return {type: 'TypeUnit'}
+  }
+
+  typecheckAdd(addNode: Add, expectedType?: StellaType): StellaType {
+    this.stackExprError(() => this.typecheckExpression(addNode.expr_1, {type: 'TypeNat'}), addNode)
+    this.stackExprError(() => this.typecheckExpression(addNode.expr_2, {type: 'TypeNat'}), addNode)
+    if (expectedType && expectedType.type !== 'TypeNat') {
+      this.throwTypeIncompatibilityError(addNode, expectedType)
+    }
+
+    return {type: 'TypeNat'}
+  }
+
+  typecheckMultiply(addNode: Multiply, expectedType?: StellaType): StellaType {
+    this.stackExprError(() => this.typecheckExpression(addNode.expr_1, {type: 'TypeNat'}), addNode)
+    this.stackExprError(() => this.typecheckExpression(addNode.expr_2, {type: 'TypeNat'}), addNode)
+
+    if (expectedType && expectedType.type !== 'TypeNat') {
+      this.throwTypeIncompatibilityError(addNode, expectedType)
+    }
+
+    return {type: 'TypeNat'}
+  }
+
+  typecheckPattern(pattern: pattern, expectedType?: StellaType): StellaType {
+    switch(pattern.type) {
+      case 'PatternFalse':
+      case 'PatternTrue':
+        if (expectedType && expectedType.type !== 'TypeBool') {
+          this.throwPatternTypeIncompatibilityError(pattern, expectedType)
+        }
+        return {type: 'TypeBool'}
+      case 'PatternVar':
+        if (expectedType) {
+          this.scope.addVariable(pattern.stellaident.value, expectedType)
+        }
+
+        return this.scope.getVariableType(pattern.stellaident.value)
+      case 'PatternSucc':
+        this.typecheckPattern(pattern, expectedType)
+      default:
+        const error = `${printPattern(pattern)} is not supported for typechecking`
+        throw new Error(error)
+    }
+  }
+
+  typecheckPatternSucc(succPattern: PatternSucc, expectedType?: StellaType): StellaType {
+    this.stackPattern(() => this.typecheckPattern(succPattern.pattern, {type: 'TypeNat'}), succPattern)
+    if (expectedType && expectedType.type !== 'TypeNat') {
+      this.throwPatternTypeIncompatibilityError(succPattern, expectedType)
+    }
+    return {type:'TypeNat'}
+  }
+
   checkSameTypes(actualType: StellaType, expectedType: StellaType): boolean {
     switch (actualType.type) {
       case 'TypeNat':
@@ -230,6 +365,8 @@ export class Typechecker {
         return expectedType.type === 'TypeBool'
       case 'TypeFun':
         return this.checkSameFunTypes(actualType, expectedType)
+      case 'TypeRef':
+        return (expectedType.type === 'TypeRef' && this.checkSameTypes(actualType.type_, expectedType.type_))
       default:
         return false
     }
@@ -264,6 +401,22 @@ export class Typechecker {
 
   throwTypeIncompatibilityError(expr: expr, type: StellaType) {
     const error = `${printExpr(expr)} is expected to have type ${printType(type)}`
+    throw new Error(error)
+  }
+
+  stackPattern<T>(fn: () => T, pattern: pattern) {
+    try {
+      return fn()
+    } catch (e) {
+      const initialMessage = (e as Error).message
+      const error = `Error at ${printPattern(pattern)}`
+      const fullError = `${initialMessage}\n${error}`
+      throw new Error(fullError)
+    }
+  }
+
+  throwPatternTypeIncompatibilityError(pattern: pattern, type: StellaType) {
+    const error = `${printPattern(pattern)} is expected to have type ${printType(type)}`
     throw new Error(error)
   }
 }

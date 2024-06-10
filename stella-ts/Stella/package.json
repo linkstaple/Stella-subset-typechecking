@@ -6,7 +6,8 @@
   "scripts": {
     "run": "ts-node index.ts",
     "init": "tsc --init",
-    "test:core": "jest -t core"
+    "test:core": "jest -t core",
+    "test:references": "jest -t references"
   },
   "keywords": [],
   "author": "",
